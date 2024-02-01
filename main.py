@@ -125,25 +125,26 @@ def selenium_connect():
     # desired_width = int(screen_width / 2)
     # desired_height = int(screen_height / 3)
     # driver.set_window_position(0, 0)
-    # driver.set_window_size(desired_width, screen_height)
+    driver.set_window_size(1920, 1080)
 
     return driver
 
 
 def click_by_coordinate(driver, element, random_coordinate):
-    try:
-        # Perform the click action with an offset
-        x, y = random_coordinate
-        action_chains = ActionChains(driver)
-        action_chains.move_to_element_with_offset(element, x, y).click().perform()
-        
-        return True
-    except Exception as e:
-        print(e)
-        return False
+    x, y = random_coordinate
+    script = """
+        var event = new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            clientX: arguments[0],
+            clientY: arguments[1]
+        });
+        arguments[2].dispatchEvent(event);
+    """
+    driver.execute_script(script, x, y, element)
 
 
-def find_color_blocks(image_path, target_color=(69, 191, 175)):
+def find_color_blocks(image_path, target_color=None):
     
     # Open the image
     image = Image.open(image_path)
@@ -152,23 +153,25 @@ def find_color_blocks(image_path, target_color=(69, 191, 175)):
     print(target_color)
     # Get the image size
     width, height = image.size
-    target_colors = None
+    exclude_colors = None
     if not target_color:
         white_shades = [(i, i, i) for i in range(256)]
         black_shades = [(i, i, i) for i in range(0, 256, 255)]
         # width, height = cropped_image.size
-        target_colors = white_shades + black_shades
+        exclude_colors = white_shades + black_shades
     result_coordinates = []
-
+    target_colors = [target_color, 
+                     (target_color[0], target_color[1]+1, target_color[2]+1),
+                     (target_color[0], target_color[1]-1, target_color[2]+1),
+                     (target_color[0], target_color[1]+1, target_color[2]-1),
+                     (target_color[0], target_color[1]-1, target_color[2]-1)]
     # Iterate over each pixel in the original image
     for x in range(width):
         for y in range(height):
             # Get the RGB values of the pixel
-            if x > 30 and x < 790 and y > 120 and y < 640:
+            if x > 30:
                 pixel = image.getpixel((x, y))
-                # Check if the pixel color is not in the target_colors list
-                if (target_colors and pixel not in target_colors) or (target_color and pixel == target_color):
-                    # If not in target_colors, add the pixel coordinates to the result list
+                if (exclude_colors and pixel not in exclude_colors) or (target_color and pixel in target_colors):
                     result_coordinates.append((x, y))
 
     # Return the list of coordinates
@@ -278,21 +281,21 @@ if __name__ == "__main__":
         black_shades = [(i, i, i) for i in range(0, 256, 255)]
 
         arr = white_shades + black_shades
-        coordinates = find_color_blocks('picture.png')
+        coordinates = find_color_blocks('picture.png', obj[category])
         print(coordinates)
-        # while True:
-        #     try:
-        #         random_coordinate = random.choice(coordinates)
-        #         print(random_coordinate)
-        #         break
-        #     except Exception as e: 
-        #         print(e)
-        #         continue
-        # print('canvas click')
-        # if not click_by_coordinate(driver, canvas, random_coordinate): continue
-        # # # color_found_count = driver.execute_script(SCRIPT)
-        # print('clicked on canvas!')
-        # time.sleep(20)
+        while True:
+            try:
+                random_coordinate = random.choice(coordinates)
+                print(random_coordinate)
+                break
+            except Exception as e: 
+                print(e)
+                continue
+        print('canvas click')
+        if not click_by_coordinate(driver, canvas, random_coordinate): continue
+        # # color_found_count = driver.execute_script(SCRIPT)
+        print('clicked on canvas!')
+        time.sleep(20)
         
         # wait_for_element(driver, 'button[data-id="ticket-selector-proceed"]', True)
         # if wait_for_element(driver, '//div[text()="Please select from the following option(s)"]', xpath=True):

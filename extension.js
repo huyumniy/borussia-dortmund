@@ -55,3 +55,36 @@ coords.forEach(([x, y]) => {
 
 console.log('colorFound =>', colorFound.length)
 console.log(coords)
+
+
+const findColorAndClick = async (canvasSelector, targetColor) => {
+  const canvas = document.querySelector(canvasSelector);
+  if (canvas) {
+      const context = canvas.getContext('2d');
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width; x++) {
+              const index = (y * canvas.width + x) * 4;
+              const pixelColor = {
+                  r: imageData.data[index],
+                  g: imageData.data[index + 1],
+                  b: imageData.data[index + 2],
+              };
+
+              // Compare pixel color with target color
+              if (
+                  pixelColor.r === targetColor.r &&
+                  pixelColor.g === targetColor.g &&
+                  pixelColor.b === targetColor.b
+              ) {
+                  // Click on the position if color is found
+                  const event = new MouseEvent('click', { bubbles: true, clientX: x, clientY: y });
+                  canvas.dispatchEvent(event);
+                  return true;
+              }
+          }
+      }
+  }
+  return false;
+};
