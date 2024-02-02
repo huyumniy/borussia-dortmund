@@ -4,24 +4,24 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.wait import WebDriverWait
-import platform
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.keys import Keys
 import sys, os
-import requests
 import sounddevice as sd
 import soundfile as sf
-from bs4 import BeautifulSoup
-from pprint import pprint
 from PIL import Image
 import numpy as np
-import datetime
 import time
-import json
 import tempfile
 import random
 import shutil
+from twocaptcha import TwoCaptcha
+
+solver = TwoCaptcha('29ada3bf8a7df98cfa4265ea1145c77b')
 
 
-PROXY = ('proxy.soax.com', 9000, 'MgvurXMD03tA6DjV', 'mobile;;')
+PROXY = ('proxy.packetstream.io', 31112, 'pergfan', 'xwhmTr7ENnYOciuM')
+
 
 class ProxyExtension:
     manifest_json = """
@@ -141,31 +141,29 @@ def click_by_coordinate(driver, element, random_coordinate):
         });
         arguments[2].dispatchEvent(event);
     """
-    driver.execute_script(script, x, y, element)
+    driver.execute_script(script, x, y+120, element)
 
 
 def find_color_blocks(image_path, target_color=None):
     
-    # Open the image
     image = Image.open(image_path)
     image = image.convert("RGB")
-    
-    print(target_color)
-    # Get the image size
     width, height = image.size
+
     exclude_colors = None
     if not target_color:
         white_shades = [(i, i, i) for i in range(256)]
         black_shades = [(i, i, i) for i in range(0, 256, 255)]
-        # width, height = cropped_image.size
         exclude_colors = white_shades + black_shades
-    result_coordinates = []
+    
+
     target_colors = [target_color, 
                      (target_color[0], target_color[1]+1, target_color[2]+1),
                      (target_color[0], target_color[1]-1, target_color[2]+1),
                      (target_color[0], target_color[1]+1, target_color[2]-1),
                      (target_color[0], target_color[1]-1, target_color[2]-1)]
-    # Iterate over each pixel in the original image
+    
+    result_coordinates = []
     for x in range(width):
         for y in range(height):
             # Get the RGB values of the pixel
@@ -195,6 +193,7 @@ def check_for_queue(driver, selector):
         return True
     except: return False
 
+
 def wait_for_element(driver, selector, click=False, xpath=False):
     try:
         if xpath:
@@ -207,23 +206,15 @@ def wait_for_element(driver, selector, click=False, xpath=False):
     except: return False
 
 
-def check_for_403(driver):
-    while True:
-        try:
-            driver.find_element(By.CSS_SELECTOR, '#cf-wrapper')
-            print('403')
-            time.sleep(30)
-            driver.refresh()
-        except: break
-
-
-def check_for_seats(driver, seat):
+def wait_for_elements(driver, selector, xpath=False):
     try:
-        seats = driver.find_elements(By.XPATH, '//*[@id="app"]/div/div/div[3]/div[3]/div[1]/div[3]/div')
-        if check_for_element(driver, '//*[@id="app"]/div/div/div[3]/div[3]', xpath=True):
-            seats[seat - 1].click()
-            driver.find_element(By.CSS_SELECTOR, '#seatlayout-continue-button').click()
-    except: pass
+        if xpath:
+            elements = WebDriverWait(driver, 5).until(
+            EC.presence_of_all_elements_located((By.XPATH, selector)))
+        else: elements = WebDriverWait(driver, 5).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector)))
+        return elements
+    except: return False
 
 
 # def post_request(json_data):
@@ -248,24 +239,56 @@ if __name__ == "__main__":
     driver.get(url)
     wait_for_element(driver, '#cookieConsentAgree', True)
     wait_for_element(driver, '#choose-seat-button', True)
-    seat = int(input('How many seats?\n'))
-
-    # check_for_403(driver)
-    # check_for_seats(driver, seat)
+    seats = int(input('Кількість квитків: 1-4\n'))
+    nearby_seats = int(input('Кількість сусідніх квитків: 1-4\n'))
+    nearby_seats_input = check_for_element(driver, '#stepper-input')
+    nearby_seats_input.send_keys(Keys.CONTROL + "a")
+    nearby_seats_input.send_keys(Keys.DELETE)
+    nearby_seats_input.send_keys(nearby_seats)
+    captcha = check_for_element(driver, 'img[class="captcha-code"]')
+    if captcha: captcha.screenshot('captcha.png')
+    area = wait_for_element(driver, '#select-area')
+    if area: area_select = Select(area)
+    print("[ТЕРИТОРІЯ СТАДІОНУ]")
+    for index, area_option in enumerate(area_select.options):
+        print(index, '|', area_option.text)
+    while True:
+        area_input = input("Оберіть територію: ")
+        try: 
+            area_select.select_by_index(area_input)
+            break
+        except: print("Такої території не існує!")
     
     df_gb = driver.find_elements(By.CSS_SELECTOR, 'div[class="table__cell table__cell--head price-list__name"]')
     obj = {}
-    print("[CATEGORIES]")
-    for element in df_gb:
+    print("[КАТЕГОРІЇ]")
+    for index, element in enumerate(df_gb):
         category = element.find_element(By.CSS_SELECTOR, 'span:not([style])').text
         rgba_color = element.find_element(By.CSS_SELECTOR, 'span[style]').value_of_css_property('background-color')
         rgba_values = rgba_color.strip('rgba()').split(',')
         rgb_color = (int(rgba_values[0]), int(rgba_values[1]), int(rgba_values[2]))
-        obj[category] = rgb_color
-        print(category)
-    category = input("Choose your category: ")
+        obj[index] = rgb_color
+        print(index, '|', category)
+
     while True:
-        print('starting loop')
+        try: 
+            category_input = int(input("Оберіть категорію: "))
+            break
+        except: print("Можна вводити лише цифри!")
+    counter = 0
+    while True:
+        if counter > 10:
+            minus_link = check_for_element(driver, "a.leaflet-control-zoom-out")
+            plus_link = check_for_element(driver, "a.leaflet-control-zoom-in")
+            while "leaflet-disabled" not in minus_link.get_attribute("class"):
+                minus_link.click()
+
+                try: WebDriverWait(driver, 3).until(
+                        EC.staleness_of(minus_link) if "leaflet-disabled" in minus_link.get_attribute("class") else EC.element_to_be_clickable((By.CSS_SELECTOR, "a.leaflet-control-zoom-out"))
+                    )
+                except: pass
+            plus_link.click()
+            counter = 0
         # driver.refresh()
         # check_for_403(driver)
         # check_for_queue(driver, '#title-element')
@@ -276,26 +299,26 @@ if __name__ == "__main__":
         canvas = wait_for_element(driver, 'canvas')
         if not canvas: continue
         time.sleep(3)
+        if wait_for_element(driver, '//p[text()="The connection to the server could not be established."]'):
+            print('govnina')
+        wait_for_element(driver, '#modal-notification-close', click=True)
         canvas.screenshot('picture.png')
-        white_shades = [(i, i, i) for i in range(256)]
-        black_shades = [(i, i, i) for i in range(0, 256, 255)]
+        coordinates = find_color_blocks('picture.png', obj[category_input])
+        try:
+            random_coordinate = random.choice(coordinates)
+            print(random_coordinate)
+        except: 
+            counter+=1
+            continue
+        
+        click_by_coordinate(driver, canvas, random_coordinate)
+        wait_for_element(driver, '#modal-notification-close', click=True)
 
-        arr = white_shades + black_shades
-        coordinates = find_color_blocks('picture.png', obj[category])
-        print(coordinates)
-        while True:
-            try:
-                random_coordinate = random.choice(coordinates)
-                print(random_coordinate)
-                break
-            except Exception as e: 
-                print(e)
-                continue
-        print('canvas click')
-        if not click_by_coordinate(driver, canvas, random_coordinate): continue
         # # color_found_count = driver.execute_script(SCRIPT)
         print('clicked on canvas!')
-        time.sleep(20)
+        seats_elements = wait_for_elements(driver, '#seat-cards-list > li')
+        if seats_elements and len(seats_elements) == seats: break
+        
         
         # wait_for_element(driver, 'button[data-id="ticket-selector-proceed"]', True)
         # if wait_for_element(driver, '//div[text()="Please select from the following option(s)"]', xpath=True):
@@ -324,3 +347,5 @@ if __name__ == "__main__":
         # # pre_text = driver.find_element(By.TAG_NAME, 'pre').text
         # # extracted_data = json.loads(pre_text)
         # # pprint(extracted_data['seatLayout']['data']['base']['action']['path']['items'])
+    wait_for_element(driver, '#add-to-cart', True)
+    print('Done')
