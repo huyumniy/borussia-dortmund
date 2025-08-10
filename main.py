@@ -13,8 +13,10 @@ import soundfile as sf
 from PIL import Image
 import numpy as np
 import time
+import tempfile
 import random
-import io, base64
+import shutil
+
 
 def selenium_connect():
     options = webdriver.ChromeOptions()
@@ -100,7 +102,9 @@ def safe_click_offset(driver, element, offset_x, offset_y):
 def is_similar(color1, color2, threshold=25):
     return all(abs(c1 - c2) <= threshold for c1, c2 in zip(color1, color2))
 
-def find_color_blocks(image, target_colors=None, threshold=25):
+def find_color_blocks(image_path, target_colors=None, threshold=25):
+    print(f"[DEBUG] Opening image: {image_path}")
+    image = Image.open(image_path).convert("RGB")
     width, height = image.size
     print(f"[DEBUG] Image size: {width}x{height}")
 
@@ -183,7 +187,7 @@ def wait_for_elements(driver, selector, xpath=False, wait=5):
 #         print("POST request failed.")
 
 
-def old_zoom(driver):
+def old_zoom(driver, overall_counter):
     minus_link = check_for_element(driver, "a.leaflet-control-zoom-out")
     plus_link = check_for_element(driver, "a.leaflet-control-zoom-in")
     while "leaflet-disabled" not in minus_link.get_attribute("class"):
@@ -194,9 +198,10 @@ def old_zoom(driver):
             )
         except: pass
     plus_link.click()
+    overall_counter += 1
 
 
-def new_zoom(driver):
+def new_zoom(driver, overall_counter):
     minus_link = check_for_element(driver, 'button[data-ref="seatmap-zoom-out"]')
     plus_link = check_for_element(driver, 'button[data-ref="seatmap-zoom-in"]')
     while not minus_link.get_attribute("disabled"):
@@ -207,40 +212,7 @@ def new_zoom(driver):
             )
         except: pass
     plus_link.click()
-
-
-def grab_full_map_image(driver, map_selector):
-    """
-    1) Finds the seatmap container via CSS selector.
-    2) Asks Chrome CDP for a full-page screenshot (offscreen included).
-    3) Crops to the container’s bounding rect.
-    """
-    # locate container
-    elem = wait_for_element(driver, map_selector, wait=5)
-    if not elem:
-        print(f"couldn't find element {map_selector}")
-        return False
-
-    # get its exact position + size in CSS pixels
-    box = driver.execute_script("""
-      const r = arguments[0].getBoundingClientRect();
-      return { x: r.left, y: r.top, width: r.width, height: r.height };
-    """, elem)
-
-    # capture full-page screenshot via CDP
-    result = driver.execute_cdp_cmd(
-        "Page.captureScreenshot",
-        { "format": "png", "fromSurface": True, "captureBeyondViewport": True }
-    )
-    png_data = base64.b64decode(result["data"])
-    full = Image.open(io.BytesIO(png_data))
-
-    # crop to the seatmap container
-    left, top = int(box["x"]), int(box["y"])
-    right = left + int(box["width"])
-    bottom = top + int(box["height"])
-    return full.crop((left, top, right, bottom))
-
+    overall_counter += 1
 
 
 if __name__ == "__main__":
@@ -299,11 +271,8 @@ if __name__ == "__main__":
             while True:
                 if counter > 10:
                     if check_for_element(driver, 'div[data-ref="seatmap-zoom-controls"]'):
-                        new_zoom(driver)
-                        overall_counter+=1
-                    else: 
-                        old_zoom(driver)
-                        overall_counter+=1
+                        new_zoom(driver, overall_counter)
+                    else: old_zoom(driver, overall_counter)
                 if overall_counter >= 3: break
                 # driver.refresh()
                 # check_for_403(driver)
@@ -312,19 +281,13 @@ if __name__ == "__main__":
                 # if check_for_element(driver, '#synopsis-book-button'): input('Login')
                 # time.sleep(5)
                 # check_for_seats(driver, seat)
-                png = None
-                image = None
                 canvas = wait_for_element(driver, 'canvas', wait=1)
-                if canvas:
-                    png = canvas.screenshot_as_png
-                    image = Image.open(io.BytesIO(png)).convert("RGB")
-                if not canvas: 
-                    canvas = check_for_element(driver, "#seatMapContainer")
-                    image = grab_full_map_image(driver, "#seatMapContainer")
-                if not image: continue
+                if not canvas: canvas = wait_for_element(driver, '#seatMapContainer', wait=1)
+                if not canvas: continue
+                time.sleep(3)
                 wait_for_element(driver, '#modal-notification-close', click=True)
-                
-                coordinates = find_color_blocks(image, category_arr)
+                canvas.screenshot('picture.png')
+                coordinates = find_color_blocks('picture.png', category_arr)
                 print(coordinates)
                 try:
                     random_coordinate = random.choice(coordinates)
@@ -340,12 +303,12 @@ if __name__ == "__main__":
 
                 # # color_found_count = driver.execute_script(SCRIPT)
                 print('clicked on canvas!')
-                seats_elements = wait_for_elements(driver, '#seat-cards-list > li', wait=0.1)
+                seats_elements = wait_for_elements(driver, '#seat-cards-list > li')
                 if seats_elements and len(seats_elements) == seats: break
                 
                 
-                check_for_element(driver, 'button[data-id="ticket-selector-proceed"]', True)
-                if check_for_element(driver, '//div[text()="Please select from the following option(s)"]', xpath=True):
+                wait_for_element(driver, 'button[data-id="ticket-selector-proceed"]', True)
+                if wait_for_element(driver, '//div[text()="Please select from the following option(s)"]', xpath=True):
                     try:
                         data, fs = sf.read('noti.wav', dtype='float32')  
                         sd.play(data, fs)

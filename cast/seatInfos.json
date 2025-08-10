@@ -1,0 +1,30 @@
+{
+    "6239588003005": {
+        "id": 6239588003005,
+        "areaId": 0,
+        "blockId": 6239588,
+        "rowId": 2,
+        "point": [
+            12749,
+            45638
+        ],
+        "handicap": 0,
+        "isSelectable": false,
+        "available": 0,
+        "excluded": false
+    },
+    "6239588003006": {
+        "id": 6239588003006,
+        "areaId": 0,
+        "blockId": 6239588,
+        "rowId": 2,
+        "point": [
+            12703,
+            45577
+        ],
+        "handicap": 0,
+        "isSelectable": false,
+        "available": 0,
+        "excluded": false
+    },
+}

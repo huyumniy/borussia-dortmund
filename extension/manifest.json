@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "borussia-dortmund-bot",
+  "version": "1.0.0",
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "world": "MAIN",
+      "js": ["dist/page.js"],
+      "matches": ["<all_urls>"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["*://*.ticket-onlineshop.com/*"],
+      "js": ["dist/content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "host_permissions": ["<all_urls>"],
+  "permissions": ["storage", "scripting", "alarms"],
+  "action": {
+    "default_popup": "src/popup/popup.html"
+  }
+}
