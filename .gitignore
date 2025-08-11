@@ -5,3 +5,5 @@ bin/
 info.txt
 picture.png
 pyvenv.cfg
+extension/node_modules/
+extension/dist/

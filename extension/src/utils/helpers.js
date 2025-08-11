@@ -3,4 +3,8 @@ const findBiggestArray = (arr) =>
 
 const delay = (time) => new Promise(res => setTimeout(res, time * 1000));
 
-export { delay, findBiggestArray };
+const log = (...args) => console.debug('[auto-purchase]', ...args);
+
+const randomChoice = arr => arr[Math.floor(Math.random() * arr.length)];
+
+export { delay, findBiggestArray, log, randomChoice};

@@ -6,19 +6,8 @@ import { categoryFiltration } from "../domain/filters/categoryFiltration.js";
 import { filterSeatChain } from "../domain/filters/seatFiltration.js";
 import { requestSheetData, waitForSheetData } from "../services/chromeExtensionApi.js";
 import { settings } from "../models/settingsModel.js";
-// import availableRows from "../test-fixtures/availableRows.js";
 
-async function captcha_check(data) {
-  if (data?.url && data.url.includes("geo.captcha-delivery.com/captcha")) {
-    await send_slack_message();
-    return true;
-  } else return false;
-}
-// https://public-api.eventim.com/seatmap/
-  // api/public/seatmap/tixx-1001-619772/block/6289343
-  // ?a_affiliateId=6135
-  // &timestamp=1754862307
-  // &signature=SSM8Kk6VAeYJ1QhxhfqJrUljJ3EGyqIAQMr-VF_nB0o
+
 async function requestSeatInfos(blockId, requestParams) {
   let requestLink = requestParams.server +
     "/seatmap/api/public/seatmap/" + 
@@ -38,7 +27,6 @@ async function requestSeatInfos(blockId, requestParams) {
   return json;
 }
 
-
 function decodeHtmlEntities(str) {
   const textarea = document.createElement('textarea');
   textarea.innerHTML = str;
@@ -53,17 +41,6 @@ function identifyMatch() {
   return `${homeTeamName.textContent} vs ${guestTeamName.textContent}`
 }
 
-/**
- * Populates the form with hidden inputs using URLSearchParams and submits it.
- */
-function generatePayload(params) {
-  const body = new URLSearchParams();
-
-  params.forEach((value, key) => {
-    body.append(key, value)
-  });
-  return body.toString()
-}
 
 async function purchaseTickets(params, purchaseLink) {
   let success = true;
@@ -78,8 +55,10 @@ async function purchaseTickets(params, purchaseLink) {
       }
     }
     );
-    if (!status || status != 200 || !text) success = false;
-    console.log("purchaseTicktes", status, text);
+    if (!status || status != 200 || !text) {
+      success = false;
+      return success;
+    }
   }
   
   return success;
@@ -87,16 +66,26 @@ async function purchaseTickets(params, purchaseLink) {
 
 export async function main() {
   if (document.location.href.includes("shoppingcart")) {
-    alert('tickets are already in cart')
+    alert('Tickets are already in cart')
+    return;
+  }
+  if (document.querySelector(".notification-sign")) {
+    alert("You are already have tickets in cart! Delete them first to start a new search")
     return;
   }
   const ticketsLimit = 4;
-
   console.log(settings);
+
   const currentMatch = identifyMatch();
   console.log(currentMatch, 'currentMatch')
   const filteredSettings = settings.matchesData.filter((match) => match.name === currentMatch);
   console.log(filteredSettings, "filteredSettings data")
+  if (!filteredSettings || filteredSettings.length === 0) {
+    let message = "This match is not included in Google Sheets settings"
+    console.log(message)
+    _countAndRun(message)
+    return;
+  }
 
   let categoryToQuantityMapping = filteredSettings
   .reduce((acc, setting) => {
@@ -110,25 +99,36 @@ export async function main() {
   await waitForElement('#__seat-selection__', true, 30000)
   const script = document.getElementById("__seat-selection__");
   if (!script) {
-    console.log('[DEBUG] No script has been found on page')
+    let message = 'No script has been found on page'
+    console.log(message)
+    _countAndRun(message)
     return;
   }
   const seatList = JSON.parse(script.textContent);
   console.log("got from <script>:", seatList);
   if (!seatList) {
-    console.log('No seat info found on page...')
+    let message = 'No seat info found on page...'
+    console.log(message)
+    _countAndRun(message)
     return;
   }
 
   let anyAvailableSeat = seatList.areaList.filter(({ freeSeats }) => freeSeats > 0);
-  if (!anyAvailableSeat) {
-    console.log('No available Seats found...')
+  if (!anyAvailableSeat || anyAvailableSeat.length === 0) {
+    let message = 'No available Seats found...'
+    console.log(message)
+    _countAndRun(message)
     return;
   }
 
   let tribunes = filteredSettings?.flatMap(setting =>
-    setting.tribune ? setting.tribune.filter(t => t) : []
+    Array.isArray(setting.tribune)
+      ? setting.tribune.filter(Boolean)
+      : setting.tribune
+        ? [setting.tribune]
+        : []
   );
+
   console.log('tribunes', tribunes)
   
   let availableAreas = seatList.areaList
@@ -137,7 +137,16 @@ export async function main() {
   tribunes
     .map(t => t.trim().toUpperCase())
     .includes(decodeHtmlEntities(area.name).trim().toUpperCase()))
+  
   console.log('available areas', availableAreas)
+
+  if (!availableAreas || availableAreas.length === 0) {
+    let message = "No available areas found"
+    console.log(message)
+    _countAndRun(message)
+    return;
+  }
+
   let subAreaIdToTribune = {};
   availableAreas.forEach(area => {
     if (Array.isArray(area.subAreas)) {
@@ -151,7 +160,6 @@ export async function main() {
 
   console.log(subAreaIdToTribune, "subAreaIdToTribune")
 
-
   let availableSubAreasId = availableAreas.flatMap(area => {
     if (!Array.isArray(area.subAreas)) return [];
     return area.subAreas
@@ -159,6 +167,14 @@ export async function main() {
       .map(subArea => subArea.id);
   });
   console.log('available sub areas id', availableSubAreasId)
+
+  if (!availableSubAreasId || availableSubAreasId.length === 0) {
+    let message = "No available sub areas found"
+    console.log(message)
+    _countAndRun(message)
+    return;
+  }
+
   // sms filtration
   let availableBlocks = seatList.smsBlocks
   .filter(block => availableSubAreasId.includes(block.id))
@@ -168,6 +184,14 @@ export async function main() {
   }))
 
   console.log(availableBlocks, 'availableBlocks')
+
+  if (!availableBlocks || availableBlocks.length === 0) {
+    let message = "No available blocks found"
+    console.log(message)
+    _countAndRun(message)
+    return;
+  }
+
   let availableRows = availableBlocks.flatMap(block =>
     Array.isArray(block.rows)
       ? block.rows
@@ -181,6 +205,13 @@ export async function main() {
   );
 
   console.log("availableRows", availableRows)
+
+  if (!availableRows || availableRows.length === 0) {
+    let message = "No available rows found"
+    console.log(message)
+    _countAndRun(message)
+    return;
+  }
   
   let filteredRows = categoryFiltration(
     availableRows,
@@ -189,14 +220,23 @@ export async function main() {
   )
   console.log(filteredRows, 'filteredRows')
 
+  if (!filteredRows || filteredRows.length === 0) {
+    let message = "No necessary categories in rows found"
+    console.log(message)
+    _countAndRun(message)
+    return;
+  }
+
   let sortedRows = filteredRows
   .filter(row => row.availabilityInfo.available > 0)
   .sort((a, b) => b.availabilityInfo.available - a.availabilityInfo.available);
   console.log(sortedRows, 'sortedRows')
 
-  let topTicketRowHolder = sortedRows.shift()
+  let topTicketRowHolder = sortedRows[Math.floor(Math.random() * sortedRows.length)]
 
   console.log(topTicketRowHolder, 'TOP ticket row holder')
+
+
   let availableSeats = topTicketRowHolder.seatGroups.map(row => row.seats
     .filter(seat => seat.available > 0)
   )
@@ -211,18 +251,22 @@ export async function main() {
   let randomAvailableSeatArray = availableSeats[Math.floor(Math.random() * availableSeats.length)]
 
   console.log(randomAvailableSeatArray, 'randomAvailableSeatArray')
+
   let chainedTickets = filterSeatChain(
     randomAvailableSeatArray,
     selectedTicketHolderCategoryQuantity
   )
+
+  console.log(chainedTickets, 'chainedTickets')
+
   if (!chainedTickets.length) {
-    console.log("No chained tickets...")
+    let message = "No chained tickets found"
+    console.log(message)
+    _countAndRun(message)
     return;
   }
 
   let randomChainedTicketsArray = chainedTickets[Math.floor(Math.random() * chainedTickets.length)];
-
-  console.log(chainedTickets, 'chainedTickets')
 
   let selectedTicketHolderBlockId = topTicketRowHolder.blockId
 
@@ -232,11 +276,7 @@ export async function main() {
   + document.location.href.split('/event')[1]
   + "/area/" + selectedTicketHolderBlockId
   console.log(purchaseLink, "purchaseLink")
-  // https://public-api.eventim.com/seatmap/
-  // api/public/seatmap/tixx-1001-619772/block/6289343
-  // ?a_affiliateId=6135
-  // &timestamp=1754862307
-  // &signature=SSM8Kk6VAeYJ1QhxhfqJrUljJ3EGyqIAQMr-VF_nB0o
+
   let paramsList = []
   
   const seatInfos = await requestSeatInfos(selectedTicketHolderBlockId, seatList.requestParams)
@@ -258,21 +298,32 @@ export async function main() {
   const success = await purchaseTickets(paramsList, purchaseLink)
 
   if (success) {
-    console.log('SUCCESSFULL!!!')
-    // window.location.href = document.location.href.split('shop/')[0] + "shop/shoppingcart"
     const seatCardForm = document.querySelector('#seatCardForm')
     seatCardForm.submit();
+    return;
   }
 
-  
+  let message = `Error in purchasing tickets. ${seatInfos}`
+  console.log(message)
+  _countAndRun(message)
+  return;
 }
+
+
+  function formatNumber(num) {
+    return num < 10 ? `0${num}` : num;
+  }
+
+  function getCurrentTime() {
+    const now = new Date();
+    const hours = formatNumber(now.getHours());
+    const minutes = formatNumber(now.getMinutes());
+    const seconds = formatNumber(now.getSeconds());
+    return `${hours}:${minutes}:${seconds}`;
+  }
 
 (async function init() {
   await waitForSheetData();
   await main();
 
 })();
-
-setInterval(() => {
-  requestSheetData()
-}, 60_000);
