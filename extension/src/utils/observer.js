@@ -1,41 +1,38 @@
-export function waitForElement(selector, waitForText = false, timeout = 10000, root = document) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
+export function waitForElement(selector, waitForText = false, timeout = 10000) {
+  return new Promise((resolve) => {
+    let found = false;
 
     function check() {
-      try {
-        const el = root.querySelector(selector);
-        if (el) {
-          if (!waitForText) return resolve(el);
-          if (el.textContent && el.textContent.trim() !== '') return resolve(el);
+      const el = document.querySelector(selector);
+      if (el) {
+        if (!waitForText || el.textContent.trim() !== "") {
+          found = true;
+          cleanup();
+          resolve(el);
+          return true;
         }
-      } catch (e) {
-      }
-      if (Date.now() - start >= timeout) {
-        return reject(new Error(`Timeout: Element "${selector}" not found within ${timeout}ms`));
       }
       return false;
     }
 
-    if (check()) return;
-
-    const observer = new MutationObserver(() => {
-      if (check()) {
-        observer.disconnect();
-        clearInterval(intervalId);
-      }
-    });
-
-    try {
-      observer.observe(root === document ? document.body : root, { childList: true, subtree: true });
-    } catch (e) {
+    function cleanup() {
+      clearInterval(pollingId);
+      clearTimeout(timeoutId);
+      observer.disconnect();
     }
 
-    const intervalId = setInterval(() => {
-      if (check()) {
-        observer.disconnect();
-        clearInterval(intervalId);
+    if (check()) return;
+
+    const pollingId = setInterval(check, 1000);
+
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    const timeoutId = setTimeout(() => {
+      if (!found) {
+        cleanup();
+        resolve(null);
       }
-    }, 200);
+    }, timeout);
   });
 }
