@@ -1,34 +1,41 @@
-export function waitForElement(selector, waitForText=false, timeout = 10000) {
+export function waitForElement(selector, waitForText = false, timeout = 10000, root = document) {
   return new Promise((resolve, reject) => {
-    // If already present
-    const existing = document.querySelector(selector);
-    if (existing) {
-      return resolve(existing);
+    const start = Date.now();
+
+    function check() {
+      try {
+        const el = root.querySelector(selector);
+        if (el) {
+          if (!waitForText) return resolve(el);
+          if (el.textContent && el.textContent.trim() !== '') return resolve(el);
+        }
+      } catch (e) {
+      }
+      if (Date.now() - start >= timeout) {
+        return reject(new Error(`Timeout: Element "${selector}" not found within ${timeout}ms`));
+      }
+      return false;
     }
 
+    if (check()) return;
+
     const observer = new MutationObserver(() => {
-      const el = document.querySelector(selector);
-      if (waitForText && el) {
-        if (el.textContent) {
-          observer.disconnect();
-          clearTimeout(timeoutId);
-          resolve(el);
-        }
-      } else if (el) {
+      if (check()) {
         observer.disconnect();
-        clearTimeout(timeoutId);
-        resolve(el);
+        clearInterval(intervalId);
       }
     });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    try {
+      observer.observe(root === document ? document.body : root, { childList: true, subtree: true });
+    } catch (e) {
+    }
 
-    const timeoutId = setTimeout(() => {
-      observer.disconnect();
-      reject(new Error(`Timeout: Element "${selector}" not found within ${timeout}ms`));
-    }, timeout);
+    const intervalId = setInterval(() => {
+      if (check()) {
+        observer.disconnect();
+        clearInterval(intervalId);
+      }
+    }, 200);
   });
 }

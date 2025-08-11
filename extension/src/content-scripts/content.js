@@ -96,7 +96,8 @@ export async function main() {
   console.log(categoryToQuantityMapping, 'categoryToQuantityMapping')
   
   document.querySelector('#choose-seat-button').click()
-  await waitForElement('#__seat-selection__', true, 30000)
+  
+  if (!seat_selection) await waitForElement('#__seat-selection__', true, 15000)
   const script = document.getElementById("__seat-selection__");
   if (!script) {
     let message = 'No script has been found on page'
