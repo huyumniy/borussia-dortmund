@@ -6,6 +6,7 @@ import { categoryFiltration } from "../domain/filters/categoryFiltration.js";
 import { filterSeatChain } from "../domain/filters/seatFiltration.js";
 import { requestSheetData, waitForSheetData } from "../services/chromeExtensionApi.js";
 import { settings } from "../models/settingsModel.js";
+import { randomChoice, shuffleArray } from "../utils/helpers.js";
 
 
 async function requestSeatInfos(blockId, requestParams) {
@@ -114,13 +115,6 @@ export async function main() {
     return;
   }
 
-  let anyAvailableSeat = seatList.areaList.filter(({ freeSeats }) => freeSeats > 0);
-  if (!anyAvailableSeat || anyAvailableSeat.length === 0) {
-    let message = 'No available Seats found...'
-    console.log(message)
-    _countAndRun(message)
-    return;
-  }
 
   let tribunes = filteredSettings?.flatMap(setting =>
     Array.isArray(setting.tribune)
@@ -133,7 +127,7 @@ export async function main() {
   console.log('tribunes', tribunes)
   
   let availableAreas = seatList.areaList
-  .filter(area => area.freeSeats > 0)
+  .filter(area => area.freeSeats > 0 || area.freeSeats === -1)
   .filter(area => !tribunes || tribunes.length === 0 ||
   tribunes
     .map(t => t.trim().toUpperCase())
@@ -192,123 +186,167 @@ export async function main() {
     _countAndRun(message)
     return;
   }
-
-  let availableRows = availableBlocks.flatMap(block =>
-    Array.isArray(block.rows)
-      ? block.rows
-        .filter(row => row.availabilityInfo?.available > 0)
-        .map(row => ({
-          ...row,
-          blockName: block.blockName,
-          tribune: block.tribune
-        }))
-      : []
-  );
-
-  console.log("availableRows", availableRows)
-
-  if (!availableRows || availableRows.length === 0) {
-    let message = "No available rows found"
-    console.log(message)
-    _countAndRun(message)
-    return;
-  }
+  let tribune = "",
+    blockId = "",
+    blockName = "",
+    categoryName = "",
+    priceId = "",
+    row = "",
+    ticketsArray = [],
+    paramsList = [],
+    seatInfos = null;
+    
   
-  let filteredRows = categoryFiltration(
-    availableRows,
-    categoryToQuantityMapping,
-    seatList.priceCategories
-  )
-  console.log(filteredRows, 'filteredRows')
+  if (randomChoice(availableBlocks)?.generalAdmissions) {
+    let categoryFilteredBlocks = availableBlocks.filter(block => {
+      block.generalAdmissions[0]?.priceCategory &&
+      Object.keys(categoryToQuantityMapping)
+      .includes(block.generalAdmissions[0].priceCategory.name)
+    })
+    console.log(categoryFilteredBlocks, "categoryFilteredBlocks")
+    let availableCategoryFilteredBlocks = categoryFilteredBlocks
+      .filter(block => {
+        let area = block.generalAdmissions[0]
+        area.available >= categoryToQuantityMapping[area.priceCategory.name]
+      })
+    console.log(availableCategoryFilteredBlocks, "availableCategoryFilteredBlocks")
+    let availableSeat = randomChoice(availableCategoryFilteredBlocks).generalAdmissions[0]
+    console.log(availableSeat, "availableSeat")
+    tribune = availableSeat.tribune
+    blockId = availableSeat.blockId
+    blockName = availableSeat.blockName
+    categoryName = availableSeat.priceCategory.name
+    priceId = availableSeat.priceCategory.id
+    for (let index = 0; index <= availableSeat.available && index < ticketsLimit; index++) {
+      ticketsArray.push(availableSeat.id + seatList.requestParams.additionalRequestParams.timestamp)
+    }
 
-  if (!filteredRows || filteredRows.length === 0) {
-    let message = "No necessary categories in rows found"
+  } else if (randomChoice(availableBlocks)?.rows) {
+    let availableRows = availableBlocks.flatMap(block =>
+      Array.isArray(block.rows)
+        ? block.rows
+          .filter(row => row.availabilityInfo?.available > 0)
+          .map(row => ({
+            ...row,
+            blockName: block.blockName,
+            tribune: block.tribune
+          }))
+        : []
+    );
+
+    console.log("availableRows", availableRows)
+
+    if (!availableRows || availableRows.length === 0) {
+      let message = "No available rows found"
+      console.log(message)
+      _countAndRun(message)
+      return;
+    }
+    
+    let filteredRows = categoryFiltration(
+      availableRows,
+      categoryToQuantityMapping,
+      seatList.priceCategories
+    )
+    console.log(filteredRows, 'filteredRows')
+
+    if (!filteredRows || filteredRows.length === 0) {
+      let message = "No necessary categories in rows found"
+      console.log(message)
+      _countAndRun(message)
+      return;
+    }
+
+    let sortedRows = filteredRows
+    .filter(row => row.availabilityInfo.available > 0)
+    .sort((a, b) => b.availabilityInfo.available - a.availabilityInfo.available);
+    console.log(sortedRows, 'sortedRows')
+
+    let shuffledRows = shuffleArray([...sortedRows]);
+
+    let topTicketRowHolder;
+    let chainedTickets = [];
+    for (const row of shuffledRows) {
+      topTicketRowHolder = row;
+      console.log(topTicketRowHolder, 'TOP ticket row holder')
+      let availableSeats = topTicketRowHolder.seatGroups
+        .map(row => row.seats.filter(seat => seat.available > 0))
+      priceId = topTicketRowHolder.availabilityInfo.priceCategories[0].priceCategory
+      let selectedTicketHolderCategoryQuantity = categoryToQuantityMapping[
+        seatList.priceCategories[
+          priceId
+        ].name
+      ]
+
+      let randomAvailableSeatArray = availableSeats[Math.floor(Math.random() * availableSeats.length)]
+      console.log(randomAvailableSeatArray, 'randomAvailableSeatArray')
+      
+      chainedTickets = filterSeatChain(
+        randomAvailableSeatArray,
+        selectedTicketHolderCategoryQuantity
+      )
+      console.log(chainedTickets, 'chainedTickets')
+
+      if (chainedTickets.length) break; // found valid row
+    }
+
+    if (!chainedTickets.length) {
+      let message = "No chained tickets found"
+      console.log(message)
+      _countAndRun(message)
+      return;
+    }
+
+    ticketsArray = chainedTickets[Math.floor(Math.random() * chainedTickets.length)];
+
+    blockId = topTicketRowHolder.blockId
+    blockName = topTicketRowHolder.blockName
+    tribune = topTicketRowHolder.tribune
+    row = topTicketRowHolder.labels[0].text
+    seatInfos = await requestSeatInfos(blockId, seatList.requestParams)
+    }
+
+      const purchaseLink = 
+    document.location.href.split('areaplan/')[0]
+    + "areaplan/addseats/event"
+    + document.location.href.split('/event')[1]
+    + "/area/" + blockId
+    console.log(purchaseLink, "purchaseLink")
+
+    
+    console.log(ticketsArray)
+    for (let index = 0; index < ticketsArray.length && index < ticketsLimit; index++) {
+      let params = new URLSearchParams();
+      let seatId = ticketsArray[index];
+      seatNumber = "";
+      if (seatInfos) seatInfos.seatInfos.find(seatInfo => seatInfo.id == seatId).seatNumber
+      console.log(seatNumber, "seatnumber!!!")
+      params.append(`seats[0][priceId]`, priceId)
+      params.append(`seats[0][row]`, row)
+      params.append(`seats[0][seat]`, seatNumber)
+      params.append(`seats[0][blockId]`, blockId)
+      params.append(`seats[0][block]`, blockName)
+      params.append(`seats[0][tribune]`, tribune)
+      params.append(`seats[0][id]`, "s" + seatId)
+      paramsList.push(params)
+    }
+
+    const success = await purchaseTickets(paramsList, purchaseLink)
+
+    if (success) {
+      const seatCardForm = document.querySelector('#seatCardForm')
+      seatCardForm.submit();
+      return;
+    }
+
+    let message = `Error in purchasing tickets. ${seatInfos}`
     console.log(message)
     _countAndRun(message)
     return;
-  }
 
-  let sortedRows = filteredRows
-  .filter(row => row.availabilityInfo.available > 0)
-  .sort((a, b) => b.availabilityInfo.available - a.availabilityInfo.available);
-  console.log(sortedRows, 'sortedRows')
-
-  let topTicketRowHolder = sortedRows[Math.floor(Math.random() * sortedRows.length)]
-
-  console.log(topTicketRowHolder, 'TOP ticket row holder')
-
-
-  let availableSeats = topTicketRowHolder.seatGroups.map(row => row.seats
-    .filter(seat => seat.available > 0)
-  )
-
-  let selectedTicketHolderPriceId = topTicketRowHolder.availabilityInfo.priceCategories[0].priceCategory
-
-  let selectedTicketHolderCategoryQuantity = categoryToQuantityMapping[
-    seatList.priceCategories[
-      selectedTicketHolderPriceId
-    ].name
-  ]
-  let randomAvailableSeatArray = availableSeats[Math.floor(Math.random() * availableSeats.length)]
-
-  console.log(randomAvailableSeatArray, 'randomAvailableSeatArray')
-
-  let chainedTickets = filterSeatChain(
-    randomAvailableSeatArray,
-    selectedTicketHolderCategoryQuantity
-  )
-
-  console.log(chainedTickets, 'chainedTickets')
-
-  if (!chainedTickets.length) {
-    let message = "No chained tickets found"
-    console.log(message)
-    _countAndRun(message)
-    return;
-  }
-
-  let randomChainedTicketsArray = chainedTickets[Math.floor(Math.random() * chainedTickets.length)];
-
-  let selectedTicketHolderBlockId = topTicketRowHolder.blockId
-
-  const purchaseLink = 
-  document.location.href.split('areaplan/')[0]
-  + "areaplan/addseats/event"
-  + document.location.href.split('/event')[1]
-  + "/area/" + selectedTicketHolderBlockId
-  console.log(purchaseLink, "purchaseLink")
-
-  let paramsList = []
-  
-  const seatInfos = await requestSeatInfos(selectedTicketHolderBlockId, seatList.requestParams)
-  console.log('seatInfos!!!', seatInfos)
-  for (let index = 0; index < randomChainedTicketsArray.length && index < ticketsLimit; index++) {
-    let params = new URLSearchParams();
-    let seatId = randomChainedTicketsArray[index];
-    let seatNumber = seatInfos.seatInfos.find(seatInfo => seatInfo.id == seatId).seatNumber
-    params.append(`seats[0][priceId]`, selectedTicketHolderPriceId)
-    params.append(`seats[0][row]`, topTicketRowHolder.labels[0].text)
-    params.append(`seats[0][seat]`, seatNumber)
-    params.append(`seats[0][blockId]`, selectedTicketHolderBlockId)
-    params.append(`seats[0][block]`, topTicketRowHolder.blockName)
-    params.append(`seats[0][tribune]`, topTicketRowHolder.tribune)
-    params.append(`seats[0][id]`, "s" + seatId)
-    paramsList.push(params)
-  }
-
-  const success = await purchaseTickets(paramsList, purchaseLink)
-
-  if (success) {
-    const seatCardForm = document.querySelector('#seatCardForm')
-    seatCardForm.submit();
-    return;
-  }
-
-  let message = `Error in purchasing tickets. ${seatInfos}`
-  console.log(message)
-  _countAndRun(message)
-  return;
 }
+
+
 
 
   function formatNumber(num) {

@@ -10,11 +10,12 @@ export function categoryFiltration(
       const categoryName = categoryIdToCategory[priceCategory.priceCategory].name
       const availableAmount = priceCategory.amount
       const settingsAmount = categoryToQuantity[categoryName]
+      
       if (settingsAmount) {
         if (availableAmount >= settingsAmount) {
           result.push(row)
         }
-      } else if (availableAmount > 0) {
+      } else if (!categoryToQuantity && availableAmount > 0) {
         result.push(row)
       }
     }

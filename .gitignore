@@ -7,3 +7,5 @@ picture.png
 pyvenv.cfg
 extension/node_modules/
 extension/dist/
+extension.zip
+extension.rar
