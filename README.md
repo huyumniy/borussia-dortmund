@@ -4,7 +4,6 @@
 - [Requirements](#requirements)
 - [Get Started](#get-started)
 - [Spreadsheet Configuration Sample](#spreadsheet-configuration-sample)
-- [Api](#api)
 
 # How it works
 
